@@ -138,29 +138,19 @@
 }
 
 ##──────────────────────────────────────────────────────────────────────────────
-## 14. Ktor
+## 14. Ktor (no keep-all: lets R8 strip unused engines/plugins)
 ##──────────────────────────────────────────────────────────────────────────────
--keep class io.ktor.** { *; }
--keepclassmembers class io.ktor.** { *; }
 -dontwarn io.ktor.**
 
 ##──────────────────────────────────────────────────────────────────────────────
 ## 15. Shazam Models
 ##──────────────────────────────────────────────────────────────────────────────
 -keep class com.music.shazamkit.models.** { *; }
--keepclassmembers class com.music.shazamkit.models.** { *; }
--keepclassmembers class com.music.shazamkit.models.** {
-    *** Companion;
-}
--keepclasseswithmembers class com.music.shazamkit.models.** {
-    kotlinx.serialization.KSerializer serializer(...);
-}
 
 ##──────────────────────────────────────────────────────────────────────────────
 ## 16. Listen Together
 ##──────────────────────────────────────────────────────────────────────────────
 -keep class com.music.vivi.listentogether.** { *; }
--keepclassmembers class com.music.vivi.listentogether.** { *; }
 -keepclassmembers class com.music.vivi.listentogether.** {
     *** Companion;
 }
@@ -168,13 +158,9 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-
-
 ##──────────────────────────────────────────────────────────────────────────────
-## 18. Room Entities & DAOs
+## 18. Room Entities (DAOs and Database are handled by Room's generated code)
 ##──────────────────────────────────────────────────────────────────────────────
--keep class * extends androidx.room.RoomDatabase { *; }
--keep @androidx.room.Dao interface * { *; }
 -keep @androidx.room.Entity class * { *; }
 -keep @androidx.room.Embedded class * { *; }
 -dontwarn androidx.room.**
@@ -196,3 +182,9 @@
 ## 21. Rhino / Java Scripting API
 ##──────────────────────────────────────────────────────────────────────────────
 -dontwarn javax.script.**
+
+##──────────────────────────────────────────────────────────────────────────────
+## 22. Smaller output
+##──────────────────────────────────────────────────────────────────────────────
+-repackageclasses ''
+-allowaccessmodification
