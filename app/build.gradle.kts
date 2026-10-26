@@ -35,16 +35,14 @@ android {
         // LastFM API keys from GitHub Secrets
 //        val lastFmKey = localProperties.getProperty("LASTFM_API_KEY") ?: System.getenv("LASTFM_API_KEY") ?: ""
 //        val lastFmSecret = localProperties.getProperty("LASTFM_SECRET") ?: System.getenv("LASTFM_SECRET") ?: ""
-        
+
         val lastFmKey = "694cbaa17c78202a133eac4656dff651"
         val lastFmSecret = "a0fdaf6060f19128c4a84f297c71e627"
 
         buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmKey\"")
         buildConfigField("String", "LASTFM_SECRET", "\"$lastFmSecret\"")
 
-
-
-//add nightly build label support
+        //add nightly build label support
         val isNightly = project.hasProperty("nightly") && project.property("nightly") == "true"
         buildConfigField("Boolean", "IS_NIGHTLY", isNightly.toString())
     }
@@ -64,76 +62,83 @@ android {
 //            isDefault = true
             buildConfigField("Boolean", "CAST_AVAILABLE", "true")
         }
-        
+
+        // Universal: all ABIs (largest APK, runs everywhere)
         create("universal") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"universal\"")
         }
+        // Modern phones (64-bit ARM)
         create("arm64") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"arm64\"")
+            ndk { abiFilters += "arm64-v8a" }
         }
+        // Older phones and MOST ANDROID TV BOXES/STICKS (32-bit ARM)
         create("armeabi") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"armeabi\"")
+            ndk { abiFilters += "armeabi-v7a" }
         }
         create("x86") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"x86\"")
+            ndk { abiFilters += "x86" }
         }
         create("x86_64") {
             dimension = "abi"
             buildConfigField("String", "ARCHITECTURE", "\"x86_64\"")
+            ndk { abiFilters += "x86_64" }
         }
     }
 
-   signingConfigs {
-    create("persistentDebug") {
-        storeFile = file("persistent-debug.keystore")
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-    }
-    create("release") {
-        val keystoreFile = file("keystore/release.keystore")
-        if (keystoreFile.exists()) {
-            storeFile = keystoreFile
-            storePassword = System.getenv("STORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+    signingConfigs {
+        create("persistentDebug") {
+            storeFile = file("persistent-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+        create("release") {
+            val keystoreFile = file("keystore/release.keystore")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("STORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+        getByName("debug") {
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storePassword = "android"
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
         }
     }
-    getByName("debug") {
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-        storePassword = "android"
-        storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
-    }
-}
 
-buildTypes {
-    release {
-        signingConfig = if (file("keystore/release.keystore").exists())
-            signingConfigs.getByName("release")
-        else
-            signingConfigs.getByName("debug")
-        isMinifyEnabled = true
-        isShrinkResources = true
-        isCrunchPngs = false
-        isDebuggable = false
-        proguardFiles(
-            getDefaultProguardFile("proguard-android-optimize.txt"),
-            "proguard-rules.pro"
-        )
-        buildConfigField("String", "ARCHITECTURE", "\"release\"")
+    buildTypes {
+        release {
+            signingConfig = if (file("keystore/release.keystore").exists())
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isCrunchPngs = false
+            isDebuggable = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            buildConfigField("String", "ARCHITECTURE", "\"release\"")
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("String", "ARCHITECTURE", "\"debug\"")
+        }
     }
-    debug {
-        applicationIdSuffix = ".debug"
-        isDebuggable = true
-        signingConfig = signingConfigs.getByName("debug")
-        buildConfigField("String", "ARCHITECTURE", "\"debug\"")
-    }
-}
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -186,6 +191,8 @@ buildTypes {
             excludes += "META-INF/LICENSE.md"
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/io.netty.versions.properties"
+            excludes += "DebugProbesKt.bin"
+            excludes += "kotlin-tooling-metadata.json"
         }
     }
 }
@@ -234,7 +241,9 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.util)
-    implementation(libs.compose.ui.tooling)
+    // Tooling is debug-only; only the lightweight preview annotations ship in release
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.animation)
     implementation(libs.compose.reorderable)
 
@@ -295,9 +304,6 @@ dependencies {
     implementation(libs.innertubex)
     implementation(libs.expressivelab)
 
-
-
-
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
@@ -317,4 +323,3 @@ dependencies {
 
     testImplementation(libs.junit)
 }
-
