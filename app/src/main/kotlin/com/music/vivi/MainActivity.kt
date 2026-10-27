@@ -8,15 +8,18 @@ package com.music.vivi
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.app.UiModeManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -29,7 +32,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.FocusInteraction
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -93,7 +101,12 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
@@ -102,6 +115,9 @@ import com.airbnb.lottie.compose.rememberLottieComposition
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -264,6 +280,13 @@ class MainActivity : ComponentActivity() {
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
 
+    /** True when running on an Android TV / leanback device. */
+    private val isTvDevice: Boolean by lazy {
+        val uiModeManager = getSystemService(android.content.Context.UI_MODE_SERVICE) as? UiModeManager
+        uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             if (service is MusicBinder) {
@@ -339,6 +362,48 @@ class MainActivity : ComponentActivity() {
         } else {
             pendingIntent = intent
         }
+    }
+
+    /**
+     * Remote control media keys on Android TV (play/pause, next, previous, rewind, fast-forward).
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (isTvDevice) {
+            val player = playerConnection?.player
+            if (player != null) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        if (player.isPlaying) player.pause() else player.play()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        player.play()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        player.pause()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        player.seekToNext()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        player.seekToPrevious()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        player.seekForward()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        player.seekBack()
+                        return true
+                    }
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -461,7 +526,7 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val layoutParams = window.attributes
                 val oldModeId = layoutParams.preferredDisplayModeId
-                
+
                 if (enableHighRefreshRate) {
                     layoutParams.preferredDisplayModeId = 0
                 } else {
@@ -473,20 +538,20 @@ class MainActivity : ComponentActivity() {
                         layoutParams.preferredDisplayModeId = mode60.modeId
                     }
                 }
-                
+
                 if (layoutParams.preferredDisplayModeId != oldModeId) {
                     window.attributes = layoutParams
                 }
             } else {
                 val params = window.attributes
                 val oldRefreshRate = params.preferredRefreshRate
-                
+
                 if (enableHighRefreshRate) {
                     params.preferredRefreshRate = 0f
                 } else {
                     params.preferredRefreshRate = 60f
                 }
-                
+
                 if (params.preferredRefreshRate != oldRefreshRate) {
                     window.attributes = params
                 }
@@ -566,7 +631,10 @@ class MainActivity : ComponentActivity() {
         val showThankYouDialog by gitHubViewModel.showThankYouDialog.collectAsState()
 
         LaunchedEffect(Unit) {
-            gitHubViewModel.checkStarStatus(this@MainActivity)
+            // Skip the GitHub star check on TV (no browser / not useful with a remote)
+            if (!isTvDevice) {
+                gitHubViewModel.checkStarStatus(this@MainActivity)
+            }
         }
 
         vivimusicTheme(
@@ -574,7 +642,7 @@ class MainActivity : ComponentActivity() {
             pureBlack = pureBlack,
             themeColor = themeColor,
         ) {
-            if (lastSeenStarPromptVersion != currentVersion && !hasStarredRepo && !isStarred) {
+            if (!isTvDevice && lastSeenStarPromptVersion != currentVersion && !hasStarredRepo && !isStarred) {
                 ActionPromptDialog(
                     title = "Support ViviMusic \u2B50",
                     onDismiss = { setLastSeenStarPromptVersion(currentVersion) },
@@ -607,7 +675,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            if (showThankYouDialog) {
+            if (!isTvDevice && showThankYouDialog) {
                 ActionPromptDialog(
                     title = "Thank You!",
                     onDismiss = { gitHubViewModel.dismissThankYouDialog() },
@@ -642,7 +710,7 @@ class MainActivity : ComponentActivity() {
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 )
                                 val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
-                                
+
                                 IconButton(
                                     onClick = { uriHandler.openUri("https://ko-fi.com/vivizzz007") },
                                     modifier = btnModifier,
@@ -685,18 +753,20 @@ class MainActivity : ComponentActivity() {
 
                 val navController = rememberNavController()
                 val homeViewModel: HomeViewModel = hiltViewModel()
-                // Pre-warm HistoryViewModel at Activity scope so history data loads
-                // in background immediately — zero lag when user taps the history icon
-                hiltViewModel<HistoryViewModel>()
-                // Pre-warm SuggestionsViewModel at Activity scope so suggestions data loads
-                // in background immediately — zero lag when user opens the Search screen
-                hiltViewModel<SuggestionsViewModel>()
+                // Pre-warm view models at Activity scope so data loads in the background.
+                // Skipped on TV (weaker hardware, less memory) - screens create them on demand.
+                if (!isTvDevice) {
+                    // Pre-warm HistoryViewModel so history data loads in background
+                    hiltViewModel<HistoryViewModel>()
+                    // Pre-warm SuggestionsViewModel so suggestions load before Search opens
+                    hiltViewModel<SuggestionsViewModel>()
+                }
                 val accountImageUrl by homeViewModel.accountImageUrl.collectAsState()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val (previousTab, setPreviousTab) = rememberSaveable { mutableStateOf("home") }
 
                 val (listenTogetherInTopBar) = rememberPreference(ListenTogetherInTopBarKey, defaultValue = true)
-                val navigationItems = remember(listenTogetherInTopBar) { 
+                val navigationItems = remember(listenTogetherInTopBar) {
                     if (listenTogetherInTopBar) {
                         Screens.MainScreens.filter { it != Screens.ListenTogether }
                     } else {
@@ -767,7 +837,8 @@ class MainActivity : ComponentActivity() {
 
                 val isLandscape = configuration.containerDpSize.width > configuration.containerDpSize.height
 
-                val showRail = isLandscape && !inSearchScreen
+                // TVs always use the side navigation rail (the bottom bar is awkward with a remote)
+                val showRail = (isLandscape || isTvDevice) && !inSearchScreen
 
                 val navPadding = if (shouldShowNavigationBar && !showRail) {
                     if (slimNav) SlimNavBarHeight else NavigationBarHeight
@@ -814,12 +885,6 @@ class MainActivity : ComponentActivity() {
                         .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
                         .add(WindowInsets(top = AppBarHeight, bottom = bottom))
                 }
-                appBarScrollBehavior(
-                    canScroll = {
-                        !inSearchScreen &&
-                            (playerBottomSheetState.isCollapsed || playerBottomSheetState.isDismissed)
-                    }
-                )
 
                 val topAppBarScrollBehavior = appBarScrollBehavior(
                     canScroll = {
@@ -909,7 +974,7 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(navBackStackEntry, listenTogetherInTopBar) {
                     val currentRoute = navBackStackEntry?.destination?.route
-                    val isListenTogetherScreen = currentRoute == Screens.ListenTogether.route || 
+                    val isListenTogetherScreen = currentRoute == Screens.ListenTogether.route ||
                         currentRoute == "listen_together_from_topbar"
                     shouldShowTopBar = currentRoute in topLevelScreens &&
                         currentRoute != "settings" &&
@@ -918,7 +983,7 @@ class MainActivity : ComponentActivity() {
 
                 val sharedPrefs = context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
                 val isUpdateAvailable = remember { mutableStateOf(getUpdateAvailableState(context)) }
-                
+
                 val updateListener = remember {
                     SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                         if (key == "update_available") {
@@ -926,7 +991,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                
+
                 DisposableEffect(sharedPrefs, updateListener) {
                     sharedPrefs.registerOnSharedPreferenceChangeListener(updateListener)
                     onDispose {
@@ -977,6 +1042,15 @@ class MainActivity : ComponentActivity() {
 
                 val baseBg = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer
 
+                // D-pad focus indicator: on TV, every clickable/focusable element that uses the
+                // default indication gets a highlighted rounded border + tint while focused.
+                val focusIndicatorColor = MaterialTheme.colorScheme.primary
+                val appIndication = if (isTvDevice) {
+                    remember(focusIndicatorColor) { TvFocusIndication(focusIndicatorColor) }
+                } else {
+                    LocalIndication.current
+                }
+
                 CompositionLocalProvider(
                     LocalDatabase provides database,
                     LocalContentColor provides if (pureBlack) Color.White else contentColorFor(MaterialTheme.colorScheme.surface),
@@ -987,6 +1061,7 @@ class MainActivity : ComponentActivity() {
                     LocalSyncUtils provides syncUtils,
                     LocalListenTogetherManager provides listenTogetherManager,
                     LocalSnackbarHostState provides snackbarHostState,
+                    LocalIndication provides appIndication,
                 ) {
                     Scaffold(
                         containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surface,
@@ -1046,9 +1121,9 @@ class MainActivity : ComponentActivity() {
                                             }
                                             Box {
                                                 var showSettingsDropdown by remember { mutableStateOf(false) }
-                                                IconButton(onClick = { 
+                                                IconButton(onClick = {
                                                     if (enableSettingsPopup) {
-                                                        showSettingsDropdown = true 
+                                                        showSettingsDropdown = true
                                                     } else {
                                                         navController.navigate("settings")
                                                     }
@@ -1072,7 +1147,7 @@ class MainActivity : ComponentActivity() {
                                                                 iterations = 1,
                                                                 speed = 1.5f
                                                             )
-    
+
                                                             LottieAnimation(
                                                                 composition = composition,
                                                                 progress = { progress },
@@ -1528,3 +1603,65 @@ val LocalDownloadUtil = staticCompositionLocalOf<DownloadUtil> { error("No Downl
 val LocalSyncUtils = staticCompositionLocalOf<SyncUtils> { error("No SyncUtils provided") }
 val LocalListenTogetherManager = staticCompositionLocalOf<com.music.vivi.listentogether.ListenTogetherManager?> { null }
 val LocalIsPlayerExpanded = compositionLocalOf { false }
+
+/**
+ * Android TV D-pad focus indicator.
+ *
+ * Provided through LocalIndication (TV only), so every clickable / focusable element that uses the
+ * default indication shows a rounded highlight border and a light tint while it has focus, and a
+ * stronger tint while the D-pad centre button is pressed.
+ */
+private data class TvFocusIndication(val color: Color) : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        TvFocusIndicationNode(interactionSource, color)
+}
+
+private class TvFocusIndicationNode(
+    private val interactionSource: InteractionSource,
+    private val color: Color,
+) : Modifier.Node(), DrawModifierNode {
+    private var isFocused = false
+    private var isPressed = false
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            interactionSource.interactions.collect { interaction ->
+                when (interaction) {
+                    is FocusInteraction.Focus -> isFocused = true
+                    is FocusInteraction.Unfocus -> isFocused = false
+                    is PressInteraction.Press -> isPressed = true
+                    is PressInteraction.Release -> isPressed = false
+                    is PressInteraction.Cancel -> isPressed = false
+                }
+                invalidateDraw()
+            }
+        }
+    }
+
+    override fun ContentDrawScope.draw() {
+        drawContent()
+        if (isFocused || isPressed) {
+            val strokeWidth = 3.dp.toPx()
+            val inset = strokeWidth / 2f
+            val corner = CornerRadius(12.dp.toPx())
+            val topLeft = Offset(inset, inset)
+            val rectSize = Size(size.width - strokeWidth, size.height - strokeWidth)
+
+            drawRoundRect(
+                color = color.copy(alpha = if (isPressed) 0.30f else 0.14f),
+                topLeft = topLeft,
+                size = rectSize,
+                cornerRadius = corner,
+            )
+            if (isFocused) {
+                drawRoundRect(
+                    color = color,
+                    topLeft = topLeft,
+                    size = rectSize,
+                    cornerRadius = corner,
+                    style = Stroke(width = strokeWidth),
+                )
+            }
+        }
+    }
+}
